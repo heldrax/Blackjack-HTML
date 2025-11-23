@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Blackjack</title>
+    <style>
+        :root {
+            --bg: #030305;
+            --t-cyan: #00f3ff;
+            --t-pink: #ff0055;
+            --t-green: #00ff88;
+            --t-yellow: #ffc400;
+            --border: rgba(255, 255, 255, 0.1);
+            --card-w: 150px;
+            --card-h: 220px;
+            --shadow-color: rgba(0, 0, 0, 0.5);
+            --glow-color: var(--t-cyan);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            margin: 0; overflow: hidden;
+            background: var(--bg);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            height: 100vh; width: 100vw;
+            display: flex; justify-content: center; align-items: center;
+            perspective: 1500px;
+            user-select: none;
+            cursor: default;
+            touch-action: manipulation;
+        }
+        #scene-wrapper {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            transform-style: preserve-3d; 
+            transition: transform 0.1s;
+        }
+        #scene-bg {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle at 50% 50%, #111 0%, #000 100%);
+            z-index: 0; pointer-events: none;
+            transition: filter 0.3s;
+        }
+        canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+        }
+        #fx-canvas { z-index: 10; }
+        #particle-canvas { z-index: 15; }
+
+        .score-zone {
+            position: absolute; left: 50%; transform: translateX(-50%);
+            padding: 10px 30px; border-radius: 50px;
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(10px);
+            border: 1px solid var(--border);
+            color: white; font-size: 2rem; font-weight: 700;
+            box-shadow: 0 0 30px var(--glow-color);
+            transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+            opacity: 0;
+        }
+        .score-zone.visible { opacity: 1; }
+        #dealer-area { top: 12%; }
+        #player-area { bottom: 25%; }
+        .score-zone::before {
+            content: attr(data-label);
+            position: absolute; top: -20px; left: 50%; transform: translateX(-50%);
+            font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 3px;
+        }
+        #big-text {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.8);
+            font-size: 8vw; font-weight: 900; text-transform: uppercase; font-style: italic;
+            color: transparent; -webkit-text-stroke: 2px rgba(255,255,255,0.1);
+            opacity: 0; transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+            pointer-events: none; z-index: 200; text-align: center;
+        }
+        #big-text.active { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        #big-text.win { color: var(--t-green); -webkit-text-stroke: 0; text-shadow: 0 0 80px var(--t-green); }
+        #big-text.lose { color: var(--t-pink); -webkit-text-stroke: 0; text-shadow: 0 0 80px var(--t-pink); }
+        #game-table {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            transform-style: preserve-3d; z-index: 20;
+        }
+        .card-container {
+            width: var(--card-w); height: var(--card-h);
+            position: absolute;
+            transform-style: preserve-3d;
+            will-change: transform;
+            cursor: grab;
+            transition: transform 0.05s;
+        }
+        .card-container:active { cursor: grabbing; }
+        .card {
+            width: 100%; height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            border-radius: 14px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+        .face {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            backface-visibility: hidden; border-radius: 14px;
+            overflow: hidden;
+            background: rgba(30, 30, 35, 0.85);
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15), inset 0 1px 0 0 rgba(255,255,255,0.3);
+            backdrop-filter: blur(20px);
+            display: flex; flex-direction: column; justify-content: space-between; padding: 18px;
+        }
+        .face.back {
+            transform: rotateY(180deg);
+            background: #080808; border: 1px solid #333;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .face.back::after {
+            content: ''; position: absolute; width: 80%; height: 80%;
+            border: 2px solid var(--border);
+            background: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.03) 10px, rgba(255,255,255,0.03) 12px);
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.3);
+        }
+        .val-box {
+            font-size: 2rem; font-weight: 800; line-height: 1;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .val-box span { font-size: 1rem; opacity: 0.8; margin-top: 2px; }
+        .val-box.bot { transform: rotate(180deg); }
+        .suit-big {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 5rem; opacity: 0.15;
+        }
+        .c-red { color: var(--t-pink); text-shadow: 0 0 25px rgba(255, 0, 85, 0.6); }
+        .c-black { color: var(--t-cyan); text-shadow: 0 0 25px rgba(0, 243, 255, 0.6); }
+
+        /* --- Contrôles --- */
+        .controls {
+            position: absolute; bottom: 40px; display: flex; gap: 20px; z-index: 100;
+        }
+        .btn {
+            position: relative;
+            background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.2);
+            color: white; padding: 18px 48px;
+            font-weight: 800; letter-spacing: 4px; text-transform: uppercase;
+            cursor: pointer; overflow: hidden;
+            transition: all 0.3s ease;
+            clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
+            backdrop-filter: blur(15px);
+            opacity: 0.3; pointer-events: none; transform: translateY(50px);
+        }
+        .btn.active { opacity: 1; pointer-events: auto; transform: translateY(0); }
+        .btn:hover { background: white; color: black; box-shadow: 0 10px 50px rgba(255,255,255,0.3); transform: translateY(-5px); }
+        .b-hit:hover { background: var(--t-cyan); box-shadow: 0 0 50px var(--t-cyan); border-color: transparent; }
+        .b-stand:hover { background: var(--t-pink); box-shadow: 0 0 50px var(--t-pink); border-color: transparent; }
+        .b-deal:hover { background: var(--t-green); box-shadow: 0 0 50px var(--t-green); border-color: transparent; }
+    </style>
+</head>
+<body>
+    <div id="scene-wrapper">
+        <div id="scene-bg"></div>
+        <canvas id="fx-canvas"></canvas>
+        <canvas id="particle-canvas"></canvas>
+        <div class="ui-layer">
+            <div id="dealer-area" class="score-zone" data-label="Croupier">
+                <span id="s-dealer">0</span>
+            </div>
+            <div id="big-text">BLACKJACK</div>
+            <div id="player-area" class="score-zone" data-label="Vous">
+                <span id="s-player">0</span>
+            </div>
+        </div>
+        <div id="game-table"></div>
+    </div>
+    <div class="controls">
+        <button id="btn-hit" class="btn b-hit">Tirer</button>
+        <button id="btn-stand" class="btn b-stand">Rester</button>
+        <button id="btn-deal" class="btn b-deal active">Jouer</button>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/howler@2.2.3/dist/howler.min.js"></script>
+    <script>
+        class Vec2 {
+            constructor(x=0, y=0) { this.x = x; this.y = y; }
+            add(v) { this.x += v.x; this.y += v.y; return this; }
+            sub(v) { this.x -= v.x; this.y -= v.y; return this; }
+            mult(s) { this.x *= s; this.y *= s; return this; }
+            len() { return Math.sqrt(this.x*this.x + this.y*this.y); }
+            normalize() { const l = this.len(); this.x /= l; this.y /= l; return this; }
+            copy() { return new Vec2(this.x, this.y); }
+        }
+
+        class SpringPhysics {
+            constructor(stiffness=0.1, damping=0.8) {
+                this.stiffness = stiffness;
+                this.damping = damping;
+            }
+            update(card, dt) {
+                const dx = card.home.x - card.pos.x;
+                const dy = card.home.y - card.pos.y;
+                const ax = dx * this.stiffness;
+                const ay = dy * this.stiffness;
+                card.vel.x += ax;
+                card.vel.y += ay;
+                card.vel.mult(this.damping);
+                card.pos.add(card.vel.copy().mult(dt));
+            }
+        }
+
+        class CollisionSystem {
+            static check(card1, card2) {
+                const dx = card1.pos.x - card2.pos.x;
+                const dy = card1.pos.y - card2.pos.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                const minDist = 180;
+                if (dist < minDist && dist > 0) {
+                    const nx = dx / dist;
+                    const ny = dy / dist;
+                    const overlap = minDist - dist;
+                    card1.pos.x += nx * overlap * 0.5;
+                    card1.pos.y += ny * overlap * 0.5;
+                    card2.pos.x -= nx * overlap * 0.5;
+                    card2.pos.y -= ny * overlap * 0.5;
+                    const vx1 = card1.vel.x, vy1 = card1.vel.y;
+                    const vx2 = card2.vel.x, vy2 = card2.vel.y;
+                    card1.vel.x = vx2; card1.vel.y = vy2;
+                    card2.vel.x = vx1; card2.vel.y = vy1;
+                }
+            }
+        }
+        class QuantumFX {
+            constructor() {
+                this.canvas = document.getElementById('fx-canvas');
+                this.pCanvas = document.getElementById('particle-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.pCtx = this.pCanvas.getContext('2d');
+                this.width = 0;
+                this.height = 0;
+                this.particles = [];
+                this.glitchIntensity = 0;
+                this.scanlineAlpha = 0.05;
+                this.glowColor = '#00f3ff';
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+            }
+            resize() {
+                this.width = window.innerWidth;
+                this.height = window.innerHeight;
+                this.canvas.width = this.width;
+                this.canvas.height = this.height;
+                this.pCanvas.width = this.width;
+                this.pCanvas.height = this.height;
+            }
+            addParticle(x, y, color) {
+                this.particles.push({
+                    x, y,
+                    vx: (Math.random()-0.5)*5,
+                    vy: (Math.random()-0.5)*5,
+                    life: 100,
+                    size: Math.random()*3+1,
+                    color
+                });
+            }
+            update() {
+                this.ctx.clearRect(0, 0, this.width, this.height);
+                this.ctx.globalAlpha = this.scanlineAlpha;
+                this.ctx.strokeStyle = '#fff';
+                this.ctx.lineWidth = 1;
+                for(let y=0; y<this.height; y+=3) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, y);
+                    this.ctx.lineTo(this.width, y);
+                    this.ctx.stroke();
+                }
+                if (this.glitchIntensity > 0) {
+                    const shiftX = (Math.random() - 0.5) * this.glitchIntensity;
+                    document.getElementById('scene-wrapper').style.transform = `translate(${shiftX}px, 0)`;
+                    this.glitchIntensity *= 0.9;
+                } else {
+                    document.getElementById('scene-wrapper').style.transform = `translate(0, 0)`;
+                }
+                this.pCtx.clearRect(0, 0, this.width, this.height);
+                this.pCtx.globalAlpha = 0.8;
+                this.particles.forEach((p, i) => {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.life--;
+                    this.pCtx.fillStyle = p.color;
+                    this.pCtx.beginPath();
+                    this.pCtx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+                    this.pCtx.fill();
+                    if (p.life <= 0) this.particles.splice(i, 1);
+                });
+            }
+        }
+        class Card {
+            constructor(val, suit, index) {
+                this.val = val;
+                this.suit = suit;
+                this.isRed = (suit === '♥' || suit === '♦');
+                this.pos = new Vec2(0, 0);
+                this.vel = new Vec2(0, 0);
+                this.home = new Vec2(0, 0);
+                this.rotZ = 0;
+                this.isFlipped = false;
+                this.zIndex = index;
+                this.el = this.createDOM();
+                this.spring = new SpringPhysics();
+                this.setupEvents();
+            }
+            createDOM() {
+                const el = document.createElement('div');
+                el.className = 'card-container';
+                el.style.zIndex = this.zIndex;
+                const colorClass = this.isRed ? 'c-red' : 'c-black';
+                el.innerHTML = `
+                    <div class="card">
+                        <div class="face front">
+                            <div class="val-box ${colorClass}"><span>${this.val}</span><span>${this.suit}</span></div>
+                            <div class="suit-big ${colorClass}">${this.suit}</div>
+                            <div class="val-box bot ${colorClass}"><span>${this.val}</span><span>${this.suit}</span></div>
+                        </div>
+                        <div class="face back"></div>
+                    </div>
+                `;
+                document.getElementById('game-table').appendChild(el);
+                return el;
+            }
+            setupEvents() {
+                const start = (e) => {
+                    if (game.state !== 'PLAYER_TURN' && game.state !== 'OVER') return;
+                    this.isDragging = true;
+                    this.el.style.zIndex = 9999;
+                    this.el.style.cursor = 'grabbing';
+                    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+                    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+                    this.dragOffset = new Vec2(this.pos.x - cx, this.pos.y - cy);
+                    this.vel.mult(0);
+                };
+                const move = (e) => {
+                    if (!this.isDragging) return;
+                    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+                    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+                    this.pos.x = cx + this.dragOffset.x;
+                    this.pos.y = cy + this.dragOffset.y;
+                };
+                const end = () => {
+                    if (!this.isDragging) return;
+                    this.isDragging = false;
+                    this.el.style.zIndex = this.zIndex;
+                    this.el.style.cursor = 'grab';
+                };
+                this.el.addEventListener('mousedown', start);
+                window.addEventListener('mousemove', move);
+                window.addEventListener('mouseup', end);
+                this.el.addEventListener('touchstart', start, {passive: false});
+                window.addEventListener('touchmove', move, {passive: false});
+                window.addEventListener('touchend', end);
+            }
+            setHome(x, y) {
+                this.home.x = x;
+                this.home.y = y;
+            }
+            flip(bool) {
+                this.isFlipped = bool;
+                this.el.querySelector('.card').style.transform = `rotateY(${bool ? 0 : 180}deg)`;
+            }
+            update(dt) {
+                if (!this.isDragging) {
+                    this.spring.update(this, dt);
+                    cards.forEach(other => {
+                        if (other !== this) CollisionSystem.check(this, other);
+                    });
+                }
+                this.el.style.transform = `
+                    translate3d(${this.pos.x}px, ${this.pos.y}px, 0)
+                    rotateZ(${this.rotZ}deg)
+                `;
+            }
+        }
+        class Blackjack {
+            constructor() {
+                this.deck = [];
+                this.pHand = [];
+                this.dHand = [];
+                this.state = 'INIT';
+                this.ui = {
+                    deal: document.getElementById('btn-deal'),
+                    hit: document.getElementById('btn-hit'),
+                    stand: document.getElementById('btn-stand'),
+                    sP: document.getElementById('s-player'),
+                    sD: document.getElementById('s-dealer'),
+                    areaP: document.getElementById('player-area'),
+                    areaD: document.getElementById('dealer-area'),
+                    msg: document.getElementById('big-text')
+                };
+                this.fx = new QuantumFX();
+                this.setupSounds();
+                this.setupEvents();
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+                this.loop();
+            }
+            setupSounds() {
+                this.sounds = {
+                    deal: new Howl({ src: ['https://assets.mixkit.co/sfx/preview/mixkit-arcade-game-jump-coin-216.mp3'] }),
+                    win: new Howl({ src: ['https://assets.mixkit.co/sfx/preview/mixkit-winning-chimes-2015.mp3'] }),
+                    lose: new Howl({ src: ['https://assets.mixkit.co/sfx/preview/mixkit-arcade-game-over-216.mp3'] })
+                };
+            }
+            setupEvents() {
+                this.ui.deal.onclick = () => this.startRound();
+                this.ui.hit.onclick = () => this.hit();
+                this.ui.stand.onclick = () => this.stand();
+            }
+            resize() {
+                this.width = window.innerWidth;
+                this.height = window.innerHeight;
+                this.fx.resize();
+            }
+            loop() {
+                const now = Date.now();
+                const dt = (now - (this.lastTime || now)) / 1000;
+                this.lastTime = now;
+                cards.forEach(card => card.update(dt));
+                this.fx.update();
+                requestAnimationFrame(() => this.loop());
+            }
+            generateDeck() {
+                const suits = ['♠','♥','♣','♦'];
+                const vals = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+                this.deck = [];
+                for(let s of suits) for(let v of vals) this.deck.push({v, s});
+                this.deck.sort(() => Math.random()-0.5);
+            }
+            getScore(hand) {
+                let score = 0;
+                let aces = 0;
+                for(let c of hand) {
+                    if(['J','Q','K'].includes(c.val)) score += 10;
+                    else if(c.val === 'A') { score += 11; aces++; }
+                    else score += parseInt(c.val);
+                }
+                while(score > 21 && aces > 0) { score -= 10; aces--; }
+                return score;
+            }
+            async startRound() {
+                if(this.state === 'DEALING' || this.state === 'PLAYER_TURN' || this.state === 'RESOLVING') return;
+                this.state = 'DEALING';
+                this.pHand = []; this.dHand = [];
+                cards.forEach(c => c.el.remove());
+                cards.length = 0;
+                this.generateDeck();
+                this.ui.msg.className = '';
+                this.ui.deal.classList.remove('active');
+                this.ui.hit.classList.remove('active');
+                this.ui.stand.classList.remove('active');
+                document.getElementById('scene-bg').style.filter = 'blur(0px)';
+                await this.spawnCard('player', true);
+                await this.wait(200);
+                await this.spawnCard('dealer', true);
+                await this.wait(200);
+                await this.spawnCard('player', true);
+                await this.wait(200);
+                await this.spawnCard('dealer', false);
+                this.updateScores();
+                this.updateLayout();
+                if(this.getScore(this.pHand) === 21) {
+                    this.stand();
+                } else {
+                    this.state = 'PLAYER_TURN';
+                    this.ui.hit.classList.add('active');
+                    this.ui.stand.classList.add('active');
+                }
+            }
+            async hit() {
+                if(this.state !== 'PLAYER_TURN') return;
+                this.fx.glitchIntensity = 10;
+                this.sounds.deal.play();
+                await this.spawnCard('player', true);
+                this.updateScores();
+                this.updateLayout();
+                if(this.getScore(this.pHand) > 21) {
+                    this.endRound('BUST', 'lose');
+                }
+            }
+            async stand() {
+                if(this.state !== 'PLAYER_TURN' && this.state !== 'DEALING') return;
+                this.state = 'DEALER_TURN';
+                this.fx.glitchIntensity = 10;
+                this.ui.hit.classList.remove('active');
+                this.ui.stand.classList.remove('active');
+                const hidden = this.dHand.find(c => !c.isFlipped);
+                if(hidden) hidden.flip(true);
+                this.updateScores(true);
+                this.updateLayout();
+                await this.wait(600);
+                while(this.getScore(this.dHand) < 17) {
+                    await this.spawnCard('dealer', true);
+                    this.updateScores(true);
+                    this.updateLayout();
+                    await this.wait(800);
+                }
+                this.resolve();
+            }
+            resolve() {
+                this.state = 'RESOLVING';
+                const p = this.getScore(this.pHand);
+                const d = this.getScore(this.dHand);
+                if(d > 21) this.endRound('CROUPIER BUST', 'win');
+                else if(p > d) this.endRound('VICTOIRE', 'win');
+                else if(p < d) this.endRound('DÉFAITE', 'lose');
+                else this.endRound('ÉGALITÉ', 'draw');
+            }
+            endRound(msg, type) {
+                this.state = 'OVER';
+                this.ui.msg.innerText = msg;
+                this.ui.msg.className = 'active ' + type;
+                this.ui.deal.classList.add('active');
+                if(type === 'win') {
+                    this.fx.glowColor = '#00ff88';
+                    this.fx.glitchIntensity = 20;
+                    this.sounds.win.play();
+                } else if (type === 'lose') {
+                    this.fx.glowColor = '#ff0055';
+                    this.fx.glitchIntensity = 20;
+                    this.sounds.lose.play();
+                } else {
+                    this.fx.glowColor = '#ffc400';
+                }
+                document.documentElement.style.setProperty('--glow-color', this.fx.glowColor);
+                this.ui.areaP.style.boxShadow = `0 0 30px ${this.fx.glowColor}`;
+                this.ui.areaD.style.boxShadow = `0 0 30px ${this.fx.glowColor}`;
+            }
+            async spawnCard(who, visible) {
+                const data = this.deck.pop();
+                const c = new Card(data.v, data.s, cards.length);
+                c.owner = who;
+                c.flip(visible);
+                if(who === 'player') this.pHand.push(c);
+                else this.dHand.push(c);
+                cards.push(c);
+                this.updateLayout();
+                this.fx.addParticle(c.pos.x + 75, c.pos.y + 110, c.isRed ? '#ff0055' : '#00f3ff');
+                return new Promise(r => setTimeout(r, 100));
+            }
+            updateScores(showDealerFull = false) {
+                const ps = this.getScore(this.pHand);
+                let ds = 0;
+                if(showDealerFull) {
+                    ds = this.getScore(this.dHand);
+                } else if (this.dHand.length > 0) {
+                    ds = this.getScore([this.dHand[0]]);
+                }
+                this.ui.sP.innerText = ps;
+                this.ui.sD.innerText = ds;
+                this.ui.areaP.classList.add('visible');
+                this.ui.areaD.classList.add('visible');
+            }
+            updateLayout() {
+                const cx = this.width / 2;
+                const cy = this.height / 2;
+                const dStart = cx - ((this.dHand.length - 1) * 110) / 2;
+                this.dHand.forEach((c, i) => {
+                    if(c.isDragging) return;
+                    c.setHome(dStart + i * 110, cy - 220);
+                    c.zIndex = i;
+                });
+                const pLen = this.pHand.length;
+                const arc = Math.min(pLen * 10, 60);
+                const startAngle = -arc / 2;
+                const step = pLen > 1 ? arc / (pLen - 1) : 0;
+                this.pHand.forEach((c, i) => {
+                    if(c.isDragging) return;
+                    const ang = startAngle + i * step;
+                    const rad = ang * Math.PI / 180;
+                    const tx = cx + Math.sin(rad) * 350;
+                    const ty = (cy + 300) - Math.cos(rad) * 80;
+                    c.setHome(tx, ty);
+                    c.zIndex = 10 + i;
+                });
+            }
+            wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+        }
+
+        // =============================================
+        //                  S-T-A-R-T
+        // =============================================
+        const cards = [];
+        const game = new Blackjack();
+    </script>
+</body>
+</html>
